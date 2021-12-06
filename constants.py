@@ -1,5 +1,6 @@
 boats = "boats"
 loads = "loads"
+users = "users"
 
 """ Constants file for Auth0's seed project
 """

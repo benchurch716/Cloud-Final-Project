@@ -1,6 +1,7 @@
 from flask.json import jsonify
 from google.cloud import datastore
 from flask import Flask, Blueprint, request
+from main import requires_auth
 import constants
 
 client = datastore.Client()
@@ -8,6 +9,7 @@ client = datastore.Client()
 bp = Blueprint('boat', __name__, url_prefix='/boats')
 
 @bp.route('', methods=['POST', 'GET'])
+@requires_auth
 def boats_get_post():
     if request.method == 'POST':
         content = request.get_json()
