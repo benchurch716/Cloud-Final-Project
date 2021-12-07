@@ -312,10 +312,12 @@ def boat_get_patch_delete(id):
     if 'application/json' not in request.accept_mimetypes:
         return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
     # Check for JWT
-    verify_jwt(request)
+    payload = verify_jwt(request)
     if request.method == 'GET':
         boat_key = client.key(constants.boats, int(id))
         boat = client.get(key=boat_key)
+        if(boat['owner'] != payload['sub']):
+            return jsonify({"Error": "This boat doesn't belong to the user"}), 403
         if(boat is None):
             return jsonify({"Error": "No boat with this boat_id exists"}), 404
         boat['id'] = id
@@ -325,6 +327,8 @@ def boat_get_patch_delete(id):
     elif request.method == "DELETE":
         boat_key = client.key(constants.boats, int(id))
         boat = client.get(key=boat_key)
+        if(boat['owner'] != payload['sub']):
+            return jsonify({"Error": "This boat doesn't belong to the user"}), 403
         if(boat is None):
             return jsonify({"Error": "No boat with this boat_id exists"}), 404
         # clear the load.carrier if a boat is deleted
@@ -342,6 +346,8 @@ def boat_get_patch_delete(id):
         # fetch boat and check for error
         boat_key = client.key(constants.boats, int(id))
         current_boat = client.get(key=boat_key)
+        if(current_boat['owner'] != payload['sub']):
+            return jsonify({"Error": "This boat doesn't belong to the user"}), 403
         if(current_boat is None):
             return jsonify({"Error": "No boat with this boat_id exists"}), 404
         # Update parameters
@@ -471,7 +477,7 @@ def load_get_delete(id):
 @app.route('/boats/<boat_id>/loads/<load_id>', methods=['PUT', 'DELETE'])
 def add_remove_load(load_id, boat_id):
     # Check for JWT
-    verify_jwt(request)
+    payload = verify_jwt(request)
     if request.method == 'PUT':
         # check for valid load
         load_key = client.key(constants.loads, int(load_id))
@@ -481,6 +487,9 @@ def add_remove_load(load_id, boat_id):
         # check for valid boat
         boat_key = client.key(constants.boats, int(boat_id))
         boat = client.get(key=boat_key)
+        # check for authorization
+        if(boat['owner'] != payload['sub']):
+            return jsonify({"Error": "This boat doesn't belong to the user"}), 403
         if(boat is None):
             return jsonify({"Error": "The specified boat and/or load does not exist"}), 404
         # check for load not in use
@@ -503,6 +512,9 @@ def add_remove_load(load_id, boat_id):
         # check for valid boat
         boat_key = client.key(constants.boats, int(boat_id))
         boat = client.get(key=boat_key)
+        # check for authorization
+        if(boat['owner'] != payload['sub']):
+            return jsonify({"Error": "This boat doesn't belong to the user"}), 403
         if(boat is None):
             return jsonify({"Error": "No boat with this boat_id"}), 404
         # search the list of loads
