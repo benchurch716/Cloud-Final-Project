@@ -258,6 +258,8 @@ def get_user():
 def boats_post_get():
     # POST Boat - create a new boat 
     if request.method == 'POST':
+        if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
         payload = verify_jwt(request)
         content = request.get_json()
         if(len(content) != 3):
@@ -272,6 +274,8 @@ def boats_post_get():
     
     # GET Boats for the JWT/user
     elif request.method == 'GET':
+        if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
         # Check for JWT
         payload = verify_jwt(request)
         # retrive all boats from the owner
@@ -303,8 +307,10 @@ def boats_post_get():
         return jsonify(error='Method not recogonized'), 405
 
 
-@app.route('/boats/<id>', methods={'GET', 'PATCH', 'DELETE'})
+@app.route('/boats/<id>', methods={'GET', 'PUT', 'DELETE'})
 def boat_get_patch_delete(id):
+    if 'application/json' not in request.accept_mimetypes:
+        return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
     # Check for JWT
     verify_jwt(request)
     if request.method == 'GET':
@@ -331,14 +337,185 @@ def boat_get_patch_delete(id):
                     client.put(load)
         client.delete(boat_key)
         return (jsonify(''), 204)
+
+    elif request.method == "PUT":
+        # fetch boat and check for error
+        boat_key = client.key(constants.boats, int(id))
+        current_boat = client.get(key=boat_key)
+        if(current_boat is None):
+            return jsonify({"Error": "No boat with this boat_id exists"}), 404
+        # Update parameters
+        content = request.get_json()
+        if(len(content) != 3):
+            return jsonify({"Error": "The request object is missing at least one of the required attributes"}) , 400
+        current_boat.update({"name": content["name"], "type": content["type"],
+                        "length": content["length"]})
+        client.put(current_boat)
+        current_boat['id'] = id
+        current_boat["self"] = str(request.base_url)
+        # Save to database
+        client.put(current_boat)
+        return jsonify(current_boat), 200
     
     else:
         return 'Method not recognized'
+
 #
 #
 # Loads
 #
 #
+
+@app.route('/loads', methods=['POST', 'GET'])
+def loads_get_post():
+    if request.method == 'POST':
+        if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
+        content = request.get_json()
+        if (len(content) != 3):
+            return {"Error": "The request object is missing the required number"}, 400
+        new_load = datastore.entity.Entity(
+        key=client.key(constants.loads))
+        new_load.update({"volume": content["volume"], "content" : content["content"], "creation_date": content["creation_date"], "carrier": None })
+        client.put(new_load)
+        new_load.update({"id": new_load.key.id, "self": str(request.base_url) + "/" + str(new_load.key.id)})
+        return jsonify(new_load), 201
+    
+    # adapted from Exploration - Intermediate REST API Features with Python
+    elif request.method == 'GET': 
+        if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
+        query = client.query(kind=constants.loads)
+        load_count = len(list(query.fetch()))
+        q_limit = int(request.args.get('limit', '5'))
+        q_offset = int(request.args.get('offset', '0'))
+        l_iterator = query.fetch(limit= q_limit, offset=q_offset)
+        pages = l_iterator.pages
+        results = list(next(pages))
+        if l_iterator.next_page_token:
+            next_offset = q_offset + q_limit
+            next_url = request.base_url + "?limit=" + str(q_limit) + "&offset=" + str(next_offset)
+        else:
+            next_url = None
+        for e in results:
+            e["id"] = e.key.id
+        output = {"loads": results}
+        if next_url:
+            output["next"] = next_url
+            output["count"] = load_count
+        return jsonify(output)
+    else:
+        return 'Method not recogonized' 
+    
+@app.route('/loads/<id>', methods={'GET', 'PUT', 'DELETE'})
+def load_get_delete(id):
+    if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
+    if request.method == 'GET':
+        load_key = client.key(constants.loads, int(id))
+        load = client.get(key=load_key)
+        if(load is None):
+            return {"Error": "No load with this load_id exists"}, 404
+        load['id'] = int(id)
+        load["self"] = str(request.base_url)
+        return jsonify(load), 200
+    
+    elif request.method == "DELETE":
+        # check if load exists
+        load_key = client.key(constants.loads, int(id))
+        load = client.get(key=load_key)
+        if(load is None):
+            return {"Error": "No load with this load_id exists"}, 404
+        # Remove load from the boat
+        query = client.query(kind=constants.boats)
+        results = list(query.fetch())
+        # search through boats
+        for boat in results:
+            for load in boat["loads"]:
+                if load["id"] == int(id):
+                    boat["loads"].remove(load)
+                    client.put(boat)
+                    break
+        # delete the load
+        client.delete(load_key)
+        return ('', 204)
+    
+    elif request.method == "PUT":
+        if 'application/json' not in request.accept_mimetypes:
+            return jsonify({"Error" : "must include 'application/json' in the Accept header"}), 406
+        # fetch load and check for error
+        load_key = client.key(constants.loads, int(id))
+        current_load = client.get(key=load_key)
+        if(current_load is None):
+            return jsonify({"Error": "No load with this load_id exists"}), 404
+        # Update parameters
+        content = request.get_json()
+        if(len(content) != 3):
+            return jsonify({"Error": "The request object is missing at least one of the required attributes"}) , 400
+        current_load.update({"volume": content["volume"], "content" : content["content"], "creation_date": content["creation_date"]})
+        client.put(current_load)
+        current_load['id'] = id
+        current_load["self"] = str(request.base_url)
+        # Save to database
+        client.put(current_load)
+        return jsonify(current_load), 200
+    else:
+        return 'Method not recognized'
+
+#
+#
+#
+# Relationships
+#
+#
+@app.route('/boats/<boat_id>/loads/<load_id>', methods=['PUT', 'DELETE'])
+def add_remove_load(load_id, boat_id):
+    # Check for JWT
+    verify_jwt(request)
+    if request.method == 'PUT':
+        # check for valid load
+        load_key = client.key(constants.loads, int(load_id))
+        load = client.get(key=load_key)
+        if(load is None):
+            return jsonify({"Error": "The specified boat and/or load does not exist"}), 404
+        # check for valid boat
+        boat_key = client.key(constants.boats, int(boat_id))
+        boat = client.get(key=boat_key)
+        if(boat is None):
+            return jsonify({"Error": "The specified boat and/or load does not exist"}), 404
+        # check for load not in use
+        if load["carrier"] is not None:
+            return jsonify({"Error": "The load is already on a ship" }), 403
+        # update loads with carrier
+        load.update({"carrier" : {"id": int(boat_id), "name": boat["name"], "self": str(request.url_root) + "boats/" + str(boat.key.id)}})
+        client.put(load)
+        # update boat with load
+        boat["loads"].append({"id": int(load_id), "self": str(request.url_root) + "loads/" + str(load.key.id)})
+        client.put(boat)
+        return jsonify(""), 204
+
+    if request.method == 'DELETE':
+        # check for valid load
+        load_key = client.key(constants.loads, int(load_id))
+        load = client.get(key=load_key)
+        if(load is None):
+            return jsonify({"Error": "No load with this load_id"}), 404
+        # check for valid boat
+        boat_key = client.key(constants.boats, int(boat_id))
+        boat = client.get(key=boat_key)
+        if(boat is None):
+            return jsonify({"Error": "No boat with this boat_id"}), 404
+        # search the list of loads
+        for item in boat["loads"]:
+            if item["id"] == int(load_id):
+                # remove the load from the boat
+                boat["loads"].remove(item)
+                client.put(boat)
+                # set the load carrier to null
+                load.update({"carrier" : None})
+                client.put(load)
+                return jsonify(""), 204
+        return  jsonify({"Error": "No load with this load_id is on this boat with this boat_id"}), 404
 
 
 if __name__ == "__main__":
